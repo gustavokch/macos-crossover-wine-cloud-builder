@@ -65,7 +65,7 @@ jobs:
           popd
 
       - name: Upload MoltenVK / DXVK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.MOLTENVK_DXVK_INSTALLATION }}
           path: ${{ env.INSTALLROOT }}/${{ env.MOLTENVK_DXVK_INSTALLATION }}.tar.gz
@@ -134,7 +134,7 @@ jobs:
           echo "$(brew --prefix krb5)/bin"    >> $GITHUB_PATH
 
       - name: Download MoltenVK / DXVK (from previous job)
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ${{ env.MOLTENVK_DXVK_INSTALLATION }}
           path: ${{ env.INSTALLROOT }}
@@ -272,7 +272,7 @@ jobs:
           popd
 
       - name: Upload Wine
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.WINE_INSTALLATION }}
           path: ${{ env.INSTALLROOT }}/${{ env.WINE_INSTALLATION }}.tar.gz
@@ -294,13 +294,13 @@ jobs:
     steps:
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Run build_local.sh
         run: ./build_local.sh
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: artifacts-build_local-wine-cx${{ matrix.CROSS_OVER_VERSION }}
           path: ${{ env.PACKAGE_UPLOAD }}
