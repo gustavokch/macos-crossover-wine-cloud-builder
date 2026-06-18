@@ -24,6 +24,10 @@ runs:
         popd
 
     ############ Build and Install MoltenVK ##############
+    - name: Install Python setuptools (for distutils on Python 3.12+)
+      shell: bash
+      run: pip3 install setuptools
+
     - name: Build MoltenVK
       shell: bash
       run: |
