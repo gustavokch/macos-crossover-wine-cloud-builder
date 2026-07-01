@@ -18,53 +18,68 @@ runs:
       with:
         python-version: '3.11'
 
-    - name: Repoint stale pinned dependency commits
+    - name: Repoint stale pinned SPIRV-Cross commit
       # The CrossOver source tarball ships its own patched copy of
-      # MoltenVK's fetchDependencies script, which pins several external
-      # repos (e.g. SPIRV-Cross) to specific forks/commits. Those pins can
-      # go stale if the fork's history is rewritten (force-push/rebase),
+      # MoltenVK's fetchDependencies script, which pinned SPIRV-Cross to
+      # a specific commit on a fork (gustavokch/SPIRV-Cross). That fork's
+      # history was rewritten and the pinned commit is no longer reachable,
       # which surfaces as "fatal: unable to read tree <sha>" mid-build.
       #
-      # This step scans fetchDependencies and every ExternalRevisions/*
-      # file for (repo URL, commit sha) pairs, checks whether each
-      # referenced commit is still reachable on its pinned repo, and if
-      # not, repoints it at that repo's current default-branch HEAD so the
-      # build can proceed.
+      # This step repoints that exact stale pin, wherever it's referenced
+      # under the moltenvk/ checkout, to the fork's current default-branch
+      # HEAD, so fetchDependencies can proceed.
+      #
+      # NOTE: this targets the specific stale commit/fork identified from
+      # the failing build log. If CodeWeavers changes the pin again (a
+      # different fork, a different stale commit), OLD_SHA/OLD_URL below
+      # will need updating to match. It deliberately does NOT abort the
+      # step on "not found" — grep/ls-remote returning no match is treated
+      # as informational, not fatal, since `bash` steps in Actions run
+      # with `-e`/pipefail by default and would otherwise kill the whole
+      # step on a simple "no matches" result.
       #
       # This is a best-effort mitigation, not a guarantee the replacement
       # commit contains the same fix the original pin was chosen for. If
-      # the build still fails downstream around SPIRV-Cross after this
-      # runs, the pin likely needs to be re-chosen by hand — check the
-      # "::warning::" lines in this step's log for exactly what got
-      # repointed and from/to which commit.
+      # MoltenVK's build fails later with something SPIRV-Cross-related,
+      # the pin likely needs to be re-chosen by hand instead.
       shell: bash
       run: |
+        set +e
         set -x
         cd ${{ inputs.crossover-source }}/moltenvk
 
-        CANDIDATE_FILES="fetchDependencies"
-        if [ -d ExternalRevisions ]; then
-          CANDIDATE_FILES="$CANDIDATE_FILES $(find ExternalRevisions -type f)"
+        OLD_SHA="d52dc12d8237ad031137850b682b38201736206c"
+        OLD_URL="https://github.com/gustavokch/SPIRV-Cross.git"
+
+        # Only bother if that exact commit is actually unreachable on the
+        # pinned fork (cheap check, avoids needlessly repointing a pin
+        # that's still fine).
+        git fetch --depth=1 "$OLD_URL" "$OLD_SHA" > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          echo "Pinned commit $OLD_SHA is still reachable on $OLD_URL — nothing to do."
+          exit 0
         fi
 
-        for f in $CANDIDATE_FILES; do
-          [ -f "$f" ] || continue
+        NEW_SHA="$(git ls-remote "$OLD_URL" HEAD 2>/dev/null | cut -f1)"
+        if [ -z "$NEW_SHA" ]; then
+          echo "::error::Could not resolve current HEAD of $OLD_URL to repoint the stale SPIRV-Cross pin."
+          exit 1
+        fi
 
-          # Any GitHub repo URL mentioned in this file.
-          grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?' "$f" 2>/dev/null | sort -u | while read -r url; do
-            # Any full 40-char commit SHA mentioned in this file.
-            grep -oE '[0-9a-f]{40}' "$f" 2>/dev/null | sort -u | while read -r sha; do
-              # Reachability probe: can we fetch this exact commit from this URL?
-              if ! git fetch --depth=1 "$url" "$sha" >/dev/null 2>&1; then
-                NEW_SHA="$(git ls-remote "$url" HEAD | cut -f1)"
-                if [ -n "$NEW_SHA" ] && [ "$NEW_SHA" != "$sha" ]; then
-                  echo "::warning::Stale pin in $f: $sha not reachable on $url — repointing to current HEAD $NEW_SHA"
-                  sed -i.bak "s/$sha/$NEW_SHA/g" "$f" && rm -f "$f.bak"
-                fi
-              fi
-            done
-          done
+        echo "Repointing stale SPIRV-Cross pin: $OLD_SHA -> $NEW_SHA"
+
+        MATCHES="$(grep -rl "$OLD_SHA" . 2>/dev/null)"
+        if [ -z "$MATCHES" ]; then
+          echo "::warning::Stale commit $OLD_SHA is unreachable on $OLD_URL, but no file under moltenvk/ references it literally — the pin may be constructed dynamically (e.g. from variables) and can't be patched this way. Build will likely still fail; the fetchDependencies script itself needs inspecting."
+          exit 0
+        fi
+
+        echo "$MATCHES" | while IFS= read -r f; do
+          sed -i.bak "s/$OLD_SHA/$NEW_SHA/g" "$f" && rm -f "$f.bak"
+          echo "Patched: $f"
         done
+
+        set -e
 
     - name: Build MoltenVK
       shell: bash
