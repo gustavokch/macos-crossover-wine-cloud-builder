@@ -1,0 +1,162 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CrossOver 26.2 custom LLVM
+
+# Controls when the workflow will runname: Build CrossOver Mac 26.2 (Rosetta 2 Target)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-crossover-wine:
+    runs-on: macos-14 # Uses Apple Silicon (M-series) GitHub hosted runner
+    env:
+      CROSSOVER_VERSION: 26.2.0
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install System Build Dependencies
+        run: |
+          echo "=== Installing Homebrew Prerequisites ==="
+          brew install bison flex mingw-w64 pkg-config cmake
+          
+          # Force GitHub Actions to use modern Homebrew bison over Apple's outdated system bison
+          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+
+      - name: Download and Extract CrossOver Source Pack
+        run: |
+          echo "=== Fetching Official CodeWeavers Sources ==="
+          curl -O https://media.codeweavers.com/pub/crossover/source/crossover-sources-${{ env.CROSSOVER_VERSION }}.tar.gz
+          tar -xzf crossover-sources-${{ env.CROSSOVER_VERSION }}.tar.gz
+          
+          # Normalize naming structures across different tarball configurations
+          if [ -d "sources" ]; then
+            mv sources src
+          elif [ -d "crossover-sources-${{ env.CROSSOVER_VERSION }}" ]; then
+            mv crossover-sources-${{ env.CROSSOVER_VERSION }} src
+          else
+            mv $(ls -d */ | grep -v '^\.' | head -n 1) src
+          fi
+
+      - name: Patch Missing distversion.h Header
+        run: |
+          echo "=== Creating Fallback distversion.h ==="
+          mkdir -p src/wine/include
+          cat << 'EOF' > src/wine/include/distversion.h
+          /* Generated for CrossOver Custom Open-Source Cloud Builder */
+          #define WINDEBUG_WHAT_HAPPENED_MESSAGE "This can be caused by a problem in the program or a deficiency in Wine. Check out CodeWeavers for compatibility details."
+          #define WINDEBUG_USER_SUGGESTION_MESSAGE "If this problem is not present under Windows, please report it to the maintainers of your engine fork."
+          EOF
+
+      - name: Compile Custom LLVM & Clang Fork (Targeting x86_64)
+        run: |
+          echo "=== Building CodeWeavers Custom LLVM Toolchain ==="
+          cd src/clang/llvm
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+                -DLLVM_TARGETS_TO_BUILD="X86" \
+                ../
+          make -j$(sysctl -n hw.ncpu)
+          
+          # Register local LLVM binaries path for Clang build phase
+          LLVM_BIN_DIR=$(pwd)/bin
+          echo "$LLVM_BIN_DIR" >> $GITHUB_PATH
+          
+          echo "=== Building CodeWeavers Custom Clang Compiler ==="
+          cd ../../clang
+          mkdir build && cd build
+          export PATH="$LLVM_BIN_DIR:$PATH"
+          cmake -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+                ../
+          make -j$(sysctl -n hw.ncpu)
+          
+          # Prepend our custom compiled Clang directory to GITHUB_PATH for the Wine engine build
+          echo "$(pwd)/bin" >> $GITHUB_PATH
+
+      - name: Build 64-bit Wine Layer
+        run: |
+          echo "=== Configuring and Compiling Wine 64-bit Layer ==="
+          cd src/wine
+          mkdir build64 && cd build64
+          
+          # Force compiler instances to build for x86_64 slice executing via Rosetta 2
+          export CC="clang -arch x86_64"
+          export CXX="clang++ -arch x86_64"
+          
+          ../configure \
+            --prefix=$GITHUB_WORKSPACE/crossover-wine-dist \
+            --enable-win32on64 \
+            --disable-winedbg \
+            --without-x \
+            --without-vulkan \
+            --disable-mscms \
+            --disable-tests
+            
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+      - name: Build 32-on-64-bit Thunking Wine Layer
+        run: |
+          echo "=== Configuring and Compiling Wine 32-on-64-bit Layer ==="
+          cd src/wine
+          mkdir build32 && cd build32
+          
+          export CC="clang -arch x86_64"
+          export CXX="clang++ -arch x86_64"
+          
+          ../configure \
+            --prefix=$GITHUB_WORKSPACE/crossover-wine-dist \
+            --enable-win32on64 \
+            --with-wine64=../build64 \
+            --disable-winedbg \
+            --without-x \
+            --without-vulkan \
+            --disable-mscms \
+            --disable-tests
+            
+          make -j$(sysctl -n hw.ncpu)
+          make install-lib
+
+      - name: Upload Final Rosetta-Targeted Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crossover-wine-mac-26.2.0-rosetta2
+          path: crossover-wine-dist/
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+
+      # Runs a single command using the runners shell
+      - name: Run a one-line script
+        run: echo Hello, world!
+
+      # Runs a set of commands using the runners shell
+      - name: Run a multi-line script
+        run: |
+          echo Add other actions to build,
+          echo test, and deploy your project.
