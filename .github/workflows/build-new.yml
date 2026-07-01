@@ -30,15 +30,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      ############ Restore MoltenVK / DXVK from cache ##############
-
-      - name: Restore MoltenVK / DXVK from cache
-        uses: actions/cache@v5
-        id: cache_moltenVK_DXVK
-        with:
-          path: ${{ env.INSTALLROOT }}/${{ env.MOLTENVK_DXVK_INSTALLATION }}
-          key: cache_moltenVK_DXVK_v6
-
       ############ Build MoltenVK / DXVK (if restore from cache failed) ##############
 
       - name: Get and Extract Source
@@ -48,8 +39,7 @@ jobs:
           crossover-local-file: "${{ env.CROSS_OVER_LOCAL_FILE }}"
           crossover-source-url: "${{ env.CROSS_OVER_SOURCE_URL }}"
 
-      - name: Build / Install MoltenVK and DXVK (if restore from cache failed)
-        if: steps.cache_moltenVK_DXVK.outputs.cache-hit != 'true'
+      - name: Build / Install MoltenVK and DXVK
         uses: ./.github/actions/build_moltenvk_dxvk
         with:
           install-prefix: "${{ env.INSTALLROOT }}/${{ env.MOLTENVK_DXVK_INSTALLATION }}"
