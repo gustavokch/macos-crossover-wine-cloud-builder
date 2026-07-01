@@ -70,7 +70,7 @@ runs:
 
         MATCHES="$(grep -rl "$OLD_SHA" . 2>/dev/null)"
         if [ -z "$MATCHES" ]; then
-          echo "::warning::Stale commit $OLD_SHA is unreachable on $OLD_URL, but no file under moltenvk/ references it literally — the pin may be constructed dynamically (e.g. from variables) and can't be patched this way. Build will likely still fail; the fetchDependencies script itself needs inspecting."
+          echo "::warning::Stale commit $OLD_SHA is unreachable on $OLD_URL, but no file under moltenvk/ references it literally — the pin may be constructed dynamically (e.g. from variables) and can't be patched this way. Build will likely still fail; the fetchDependen"
           exit 0
         fi
 
@@ -80,6 +80,12 @@ runs:
         done
 
         set -e
+
+    - name: Apply MoltenVK xcpretty fix
+      shell: bash
+      run: |
+        cd ${{ inputs.crossover-source }}/moltenvk
+        patch -p1 < ${{ github.workspace }}/0004-moltenvk-remove-xcpretty.patch
 
     - name: Build MoltenVK
       shell: bash
