@@ -14,14 +14,6 @@ runs:
   using: "composite"
   steps:
 
-    - name: Applying patches to DXVK
-      shell: bash
-      run: |
-        pushd ${{ inputs.crossover-source }}/dxvk
-        patch -p1 < ${{ github.workspace }}/0001-build-macOS-Fix-up-for-macOS.patch
-        patch -p1 < ${{ github.workspace }}/0003-fixes-for-mingw-gcc-12.patch
-        popd
-
     ############ Build and Install MoltenVK ##############
     - name: Set up Python 3.11 (includes distutils)
       uses: actions/setup-python@v5
