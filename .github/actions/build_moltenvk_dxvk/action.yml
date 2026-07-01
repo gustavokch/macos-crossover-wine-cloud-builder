@@ -81,11 +81,16 @@ runs:
 
         set -e
 
-    - name: Apply MoltenVK xcpretty fix
+    - name: Remove xcpretty from MoltenVK Makefile
       shell: bash
       run: |
         cd ${{ inputs.crossover-source }}/moltenvk
-        patch -p1 < ${{ github.workspace }}/0004-moltenvk-remove-xcpretty.patch
+        # Remove xcpretty pipe from Makefile using sed
+        # This handles any formatting variation
+        sed -i.bak 's/ *| *xcpretty//g' Makefile
+        echo "Updated Makefile (first 20 lines):"
+        head -20 Makefile
+        rm -f Makefile.bak
 
     - name: Build MoltenVK
       shell: bash
