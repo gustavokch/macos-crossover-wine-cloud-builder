@@ -9,16 +9,62 @@ inputs:
     description: 'Installation target directory for MoltenVK and DXVK'
     required: true
     # default: ${{ env.INSTALLROOT }}/${{ env.MOLTENVK_DXVK_INSTALLATION }}
-
 runs:
   using: "composite"
   steps:
-
     ############ Build and Install MoltenVK ##############
     - name: Set up Python 3.11 (includes distutils)
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+
+    - name: Repoint stale pinned dependency commits
+      # The CrossOver source tarball ships its own patched copy of
+      # MoltenVK's fetchDependencies script, which pins several external
+      # repos (e.g. SPIRV-Cross) to specific forks/commits. Those pins can
+      # go stale if the fork's history is rewritten (force-push/rebase),
+      # which surfaces as "fatal: unable to read tree <sha>" mid-build.
+      #
+      # This step scans fetchDependencies and every ExternalRevisions/*
+      # file for (repo URL, commit sha) pairs, checks whether each
+      # referenced commit is still reachable on its pinned repo, and if
+      # not, repoints it at that repo's current default-branch HEAD so the
+      # build can proceed.
+      #
+      # This is a best-effort mitigation, not a guarantee the replacement
+      # commit contains the same fix the original pin was chosen for. If
+      # the build still fails downstream around SPIRV-Cross after this
+      # runs, the pin likely needs to be re-chosen by hand — check the
+      # "::warning::" lines in this step's log for exactly what got
+      # repointed and from/to which commit.
+      shell: bash
+      run: |
+        set -x
+        cd ${{ inputs.crossover-source }}/moltenvk
+
+        CANDIDATE_FILES="fetchDependencies"
+        if [ -d ExternalRevisions ]; then
+          CANDIDATE_FILES="$CANDIDATE_FILES $(find ExternalRevisions -type f)"
+        fi
+
+        for f in $CANDIDATE_FILES; do
+          [ -f "$f" ] || continue
+
+          # Any GitHub repo URL mentioned in this file.
+          grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?' "$f" 2>/dev/null | sort -u | while read -r url; do
+            # Any full 40-char commit SHA mentioned in this file.
+            grep -oE '[0-9a-f]{40}' "$f" 2>/dev/null | sort -u | while read -r sha; do
+              # Reachability probe: can we fetch this exact commit from this URL?
+              if ! git fetch --depth=1 "$url" "$sha" >/dev/null 2>&1; then
+                NEW_SHA="$(git ls-remote "$url" HEAD | cut -f1)"
+                if [ -n "$NEW_SHA" ] && [ "$NEW_SHA" != "$sha" ]; then
+                  echo "::warning::Stale pin in $f: $sha not reachable on $url — repointing to current HEAD $NEW_SHA"
+                  sed -i.bak "s/$sha/$NEW_SHA/g" "$f" && rm -f "$f.bak"
+                fi
+              fi
+            done
+          done
+        done
 
     - name: Build MoltenVK
       shell: bash
@@ -28,58 +74,46 @@ runs:
         ./fetchDependencies --macos
         make macos
         popd
-
     - name: Install MoltenVK
       shell: bash
       run: |
         set -x
-
         pushd ${{ inputs.crossover-source }}/moltenvk/Package/Latest/MoltenVK
         mkdir -p ${{ inputs.install-prefix }}/usr/local/lib/
         cp ./dylib/macOS/*.dylib ${{ inputs.install-prefix }}/usr/local/lib/
         cp -r ./include ${{ inputs.install-prefix }}/usr/local/
         popd
-
         # also copy the spirv-headers as VKD3D seems to need them for building
         pushd ${{ inputs.crossover-source }}/moltenvk/External/glslang/External/spirv-tools/external/spirv-headers/include/
         cp -r ./spirv ${{ inputs.install-prefix }}/usr/local/include/
-
         popd
-
     ############ Build and Install DXVK ##############
     - name: Get latest HomeBrew formulas/bottles
       shell: bash
       run: |
         brew update
-
     - name: Install Dependencies for DXVK
       shell: bash
       run: |
         brew install  glslang   \
                       mingw-w64 \
                       meson
-
     - name: Build DXVK
       shell: bash
       run: |
         set -x
         pushd ${{ inputs.crossover-source }}/dxvk
-
         ./package-release.sh master ${{ inputs.crossover-source }}/dxvk/install --no-package
         popd
-
     - name: Install DXVK
       shell: bash
       run: |
         set -x
         pushd ${{ inputs.crossover-source }}/dxvk/install/dxvk-macOS-master
-
         echo Installing DXVK dlls...
         mkdir -p ${{ inputs.install-prefix }}/usr/local/lib64/wine
         cp -r x64 ${{ inputs.install-prefix }}/usr/local/lib64/wine/dxvk
-
         echo Installing DXVK setup script...
         mkdir -p ${{ inputs.install-prefix }}/usr/local/bin
         cp setup_dxvk.sh ${{ inputs.install-prefix }}/usr/local/bin/
-
         popd
