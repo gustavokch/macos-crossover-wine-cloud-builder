@@ -9,7 +9,7 @@ on:
 
 env:
   # avoid weird linker errors with Xcode 10 and later
-  MACOSX_DEPLOYMENT_TARGET: 10.14
+  MACOSX_DEPLOYMENT_TARGET: 11
   # directories / files inside the downloaded tar file directory structure
   WINE_CONFIGURE: ${{ github.workspace }}/sources/wine/configure
   # build directories
