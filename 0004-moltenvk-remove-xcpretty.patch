@@ -1,0 +1,24 @@
+From: GitHub Copilot <copilot@github.com>
+Date: Wed, 1 Jul 2026 22:14:00 +0000
+Subject: [PATCH] Remove xcpretty from MoltenVK Makefile to fix build
+
+xcpretty is a build prettifier that can cause compilation failures
+when it's not installed or properly configured. Removing it from the
+build command allows the build to proceed with standard xcodebuild output.
+
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 1234567..abcdefg 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,4 +1,4 @@
+-macos: fetchDependencies | xcpretty
++macos: fetchDependencies
+ 	xcodebuild build -project MoltenVKPackaging/MoltenVKPackaging.xcodeproj -scheme "MoltenVK Package (macOS only)" -configuration Release
+ 
+ macos-debug: fetchDependencies
+-- 
+2.32.0
