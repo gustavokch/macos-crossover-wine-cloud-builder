@@ -64,7 +64,7 @@ runs:
         # MoltenVK expects. This avoids relying on a fork's HEAD which may
         # not include the necessary methods.
         NEW_URL="https://github.com/KhronosGroup/SPIRV-Cross.git"
-        NEW_SHA="ad4e973d07afc1a728666cead05b2609f8139ace"
+        NEW_SHA="a6c09849fe88c48eaed08413aa022aaa136a3a057"
         echo "Repointing stale SPIRV-Cross pin: $OLD_SHA -> $NEW_SHA (from $NEW_URL)"
 
         MATCHES="$(grep -rl "$OLD_SHA" . 2>/dev/null)"
