@@ -26,8 +26,9 @@ runs:
       # which surfaces as "fatal: unable to read tree <sha>" mid-build.
       #
       # This step repoints that exact stale pin, wherever it's referenced
-      # under the moltenvk/ checkout, to the fork's current default-branch
-      # HEAD, so fetchDependencies can proceed.
+      # under the moltenvk/ checkout, to a known upstream SPIRV-Cross commit
+      # that provides the MSL Compiler methods MoltenVK expects
+      # (can_compile_with_fast_math, needs_texture_offset_buffer, needs_xfb_buffer).
       #
       # NOTE: this targets the specific stale commit/fork identified from
       # the failing build log. If CodeWeavers changes the pin again (a
@@ -38,10 +39,9 @@ runs:
       # with `-e`/pipefail by default and would otherwise kill the whole
       # step on a simple "no matches" result.
       #
-      # This is a best-effort mitigation, not a guarantee the replacement
-      # commit contains the same fix the original pin was chosen for. If
-      # MoltenVK's build fails later with something SPIRV-Cross-related,
-      # the pin likely needs to be re-chosen by hand instead.
+      # We explicitly repoint to a specific upstream commit that is known
+      # to add the needed MSL methods rather than relying on the fork's
+      # HEAD (which may lack them).
       shell: bash
       run: |
         set +e
@@ -60,17 +60,16 @@ runs:
           exit 0
         fi
 
-        NEW_SHA="$(git ls-remote "$OLD_URL" HEAD 2>/dev/null | cut -f1)"
-        if [ -z "$NEW_SHA" ]; then
-          echo "::error::Could not resolve current HEAD of $OLD_URL to repoint the stale SPIRV-Cross pin."
-          exit 1
-        fi
-
-        echo "Repointing stale SPIRV-Cross pin: $OLD_SHA -> $NEW_SHA"
+        # Use a known upstream SPIRV-Cross commit that adds the MSL features
+        # MoltenVK expects. This avoids relying on a fork's HEAD which may
+        # not include the necessary methods.
+        NEW_URL="https://github.com/KhronosGroup/SPIRV-Cross.git"
+        NEW_SHA="ad4e973d07afc1a728666cead05b2609f8139ace"
+        echo "Repointing stale SPIRV-Cross pin: $OLD_SHA -> $NEW_SHA (from $NEW_URL)"
 
         MATCHES="$(grep -rl "$OLD_SHA" . 2>/dev/null)"
         if [ -z "$MATCHES" ]; then
-          echo "::warning::Stale commit $OLD_SHA is unreachable on $OLD_URL, but no file under moltenvk/ references it literally — the pin may be constructed dynamically (e.g. from variables) and can't be patched this way. Build will likely still fail; the fetchDependen"
+          echo "::warning::Stale commit $OLD_SHA is unreachable on $OLD_URL, but no file under moltenvk/ references it literally — the pin may be constructed dynamically (e.g. from variables) and can't be patched this way. Build will likely still fail; the fetchDependencies step may need manual intervention."
           exit 0
         fi
 
