@@ -67,6 +67,14 @@ runs:
         NEW_SHA="6c09849fe88c48eaed08413aa022aaa136a3a057"
         echo "Repointing stale SPIRV-Cross pin: $OLD_SHA -> $NEW_SHA (from $NEW_URL)"
 
+        # Ensure the target commit is available locally so subsequent git read-tree
+        # or checkout operations succeed (prevents "fatal: unable to read tree ...").
+        # Try a shallow fetch for speed; fall back to an unshallowed fetch for reliability.
+        git fetch --depth=1 "$NEW_URL" "$NEW_SHA" || git fetch "$NEW_URL" "$NEW_SHA" || {
+          echo "::error::Could not fetch NEW_SHA $NEW_SHA from $NEW_URL"
+          exit 1
+        }
+
         MATCHES="$(grep -rl "$OLD_SHA" . 2>/dev/null)"
         if [ -z "$MATCHES" ]; then
           echo "::warning::Stale commit $OLD_SHA is unreachable on $OLD_URL, but no file under moltenvk/ references it literally — the pin may be constructed dynamically (e.g. from variables) and can't be patched this way. Build will likely still fail; the fetchDependencies step may need manual intervention."
